@@ -67,7 +67,7 @@ def main():
     if not glfw.init():
         return
 
-    window = glfw.create_window(900,700,"Composite Transformation (No Overlap)",None,None)
+    window = glfw.create_window(900,700,"Composite Transformation",None,None)
     glfw.make_context_current(window)
     glClearColor(0.07,0.07,0.1,1)
 

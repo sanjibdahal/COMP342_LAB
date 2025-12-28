@@ -28,7 +28,7 @@ def draw_midpoint_ellipse(cx, cy, rx, ry):
 
     glBegin(GL_POINTS)
 
-    # First Zone
+    # First Region
     d = ry2 - rx2 * ry + 0.25 * rx2
 
     while ry2 * x <= rx2 * y:
@@ -42,7 +42,7 @@ def draw_midpoint_ellipse(cx, cy, rx, ry):
             y -= 1
             d += ry2 * (2 * x + 1) - 2 * rx2 * y
 
-    # Second Zone
+    # Second Region
     d = (ry2 * (x + 0.5) ** 2) + (rx2 * (y - 1) ** 2) - rx2 * ry2
 
     while y >= 0:
@@ -63,7 +63,7 @@ def main():
     if not glfw.init():
         return
 
-    window = glfw.create_window(800, 600, "Midpoint Ellipse", None, None)
+    window = glfw.create_window(800, 600, "Ellipse", None, None)
     if not window:
         glfw.terminate()
         return

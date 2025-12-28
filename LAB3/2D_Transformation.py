@@ -73,7 +73,7 @@ def main():
     if not glfw.init():
         return
 
-    window = glfw.create_window(800, 600, "2D Transformations (Homogeneous)", None, None)
+    window = glfw.create_window(800, 600, "2D Transformations", None, None)
     glfw.make_context_current(window)
     glClearColor(0.08,0.08,0.1,1)
     glLineWidth(2)
