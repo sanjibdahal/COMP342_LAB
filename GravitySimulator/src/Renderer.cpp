@@ -4,6 +4,8 @@
 #include <cmath>
 #include <iostream>
 
+const int M_PI = 3.14;
+
 // Shader sources embedded
 const char* vertexShaderSource = R"(
 #version 330 core

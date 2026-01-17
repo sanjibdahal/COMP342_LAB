@@ -12,6 +12,8 @@
 #include "Renderer.h"
 #include "UI.h"
 
+const int M_PI = 3.14;
+
 // Global state
 Camera camera(glm::vec3(0.0f, 50.0f, 150.0f), glm::vec3(0.0f));
 Renderer renderer;

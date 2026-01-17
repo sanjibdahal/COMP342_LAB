@@ -1,3 +1,0 @@
-/home/sanjibdahal/Desktop/COMP342_LAB/GravitySimulator/build/CMakeFiles/GravitySimulator.dir
-/home/sanjibdahal/Desktop/COMP342_LAB/GravitySimulator/build/CMakeFiles/edit_cache.dir
-/home/sanjibdahal/Desktop/COMP342_LAB/GravitySimulator/build/CMakeFiles/rebuild_cache.dir
