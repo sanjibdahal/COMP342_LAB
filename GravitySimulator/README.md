@@ -137,6 +137,10 @@ g++ -std=c++17 src/*.cpp -o GravitySimulator \
     -I./libs -I/usr/include/glm
 ```
 
+```bash
+g++ --std=c++17 src/*.cpp -o GravitySimulator.exe -lglfw3 -lglew32 -lopengl32 -lgdi32
+```
+
 ## 🎮 Controls
 
 ### Keyboard

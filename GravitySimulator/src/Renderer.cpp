@@ -4,7 +4,9 @@
 #include <cmath>
 #include <iostream>
 
-const int M_PI = 3.14;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // Shader sources embedded
 const char* vertexShaderSource = R"(
@@ -103,8 +105,8 @@ bool Renderer::initialize() {
         return false;
     }
     
-    // Create sphere mesh
-    createSphere(1.0f, 30, 30);
+    // Create sphere mesh with higher subdivisions for smooth spheres
+    createSphere(1.0f, 36, 36);
     
     // Create grid
     createGrid(200.0f, 20);
@@ -144,7 +146,7 @@ void Renderer::render(const std::vector<std::unique_ptr<Body>>& bodies,
     if (showAxes) renderAxes(view, projection);
     
     // Render bodies
-    renderBodies(bodies, view, projection);
+    renderBodies(bodies, view, projection, camera.getPosition());
     
     // Render trails
     if (showTrails) renderTrails(bodies, view, projection);
@@ -154,14 +156,15 @@ void Renderer::render(const std::vector<std::unique_ptr<Body>>& bodies,
 }
 
 void Renderer::renderBodies(const std::vector<std::unique_ptr<Body>>& bodies,
-                           const glm::mat4& view, const glm::mat4& projection) {
+                           const glm::mat4& view, const glm::mat4& projection,
+                           const glm::vec3& cameraPos) {
     bodyShader.use();
     bodyShader.setMat4("view", view);
     bodyShader.setMat4("projection", projection);
     
-    // Simple lighting from above
-    bodyShader.setVec3("lightPos", glm::vec3(0.0f, 1000.0f, 0.0f));
-    bodyShader.setVec3("viewPos", glm::vec3(0.0f, 50.0f, 100.0f));
+    // Dynamic lighting from camera position
+    bodyShader.setVec3("lightPos", cameraPos + glm::vec3(100.0f, 100.0f, 100.0f));
+    bodyShader.setVec3("viewPos", cameraPos);
     
     for (const auto& body : bodies) {
         renderSphere(body->position, body->radius, body->color, view, projection);
@@ -184,41 +187,49 @@ void Renderer::renderSphere(const glm::vec3& position, float radius,
     glBindVertexArray(0);
 }
 
-// Continues in Part 2...
-// Continuation of Renderer.cpp
-
 void Renderer::createSphere(float radius, unsigned int rings, unsigned int sectors) {
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
     
-    float const R = 1.0f / (float)(rings - 1);
-    float const S = 1.0f / (float)(sectors - 1);
-    
-    for (unsigned int r = 0; r < rings; r++) {
-        for (unsigned int s = 0; s < sectors; s++) {
-            float const y = sin(-M_PI / 2 + M_PI * r * R);
-            float const x = cos(2 * M_PI * s * S) * sin(M_PI * r * R);
-            float const z = sin(2 * M_PI * s * S) * sin(M_PI * r * R);
+    // Generate sphere vertices using spherical coordinates
+    for (unsigned int r = 0; r <= rings; r++) {
+        float phi = M_PI * float(r) / float(rings);  // 0 to PI
+        
+        for (unsigned int s = 0; s <= sectors; s++) {
+            float theta = 2.0f * M_PI * float(s) / float(sectors);  // 0 to 2*PI
             
+            // Calculate position using proper spherical coordinates
+            float x = sin(phi) * cos(theta);
+            float y = cos(phi);
+            float z = sin(phi) * sin(theta);
+            
+            // Position
             vertices.push_back(x * radius);
             vertices.push_back(y * radius);
             vertices.push_back(z * radius);
             
+            // Normal (same as normalized position for a sphere centered at origin)
             vertices.push_back(x);
             vertices.push_back(y);
             vertices.push_back(z);
         }
     }
     
-    for (unsigned int r = 0; r < rings - 1; r++) {
-        for (unsigned int s = 0; s < sectors - 1; s++) {
-            indices.push_back(r * sectors + s);
-            indices.push_back(r * sectors + (s + 1));
-            indices.push_back((r + 1) * sectors + (s + 1));
+    // Generate indices for triangle strips
+    for (unsigned int r = 0; r < rings; r++) {
+        for (unsigned int s = 0; s < sectors; s++) {
+            unsigned int first = r * (sectors + 1) + s;
+            unsigned int second = first + sectors + 1;
             
-            indices.push_back(r * sectors + s);
-            indices.push_back((r + 1) * sectors + (s + 1));
-            indices.push_back((r + 1) * sectors + s);
+            // First triangle
+            indices.push_back(first);
+            indices.push_back(second);
+            indices.push_back(first + 1);
+            
+            // Second triangle
+            indices.push_back(second);
+            indices.push_back(second + 1);
+            indices.push_back(first + 1);
         }
     }
     
@@ -238,9 +249,11 @@ void Renderer::createSphere(float radius, unsigned int rings, unsigned int secto
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int),
                  indices.data(), GL_STATIC_DRAW);
     
+    // Position attribute
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     
+    // Normal attribute
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), 
                          (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);

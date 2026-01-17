@@ -1,12 +1,21 @@
 #include "PhysicsEngine.h"
 #include <glm/glm.hpp>
 #include <cmath>
+#include <iostream>
 
 PhysicsEngine::PhysicsEngine(float gravityScale)
-    : gravityScale(gravityScale), useRK4(true), collisionsEnabled(true) {
+    : gravityScale(gravityScale), useRK4(true), collisionsEnabled(true),
+      dampingEnabled(false), dampingFactor(0.9999f),
+      centeringForceEnabled(false), maxVelocity(50.0f) {
 }
 
 void PhysicsEngine::update(std::vector<std::unique_ptr<Body>>& bodies, float deltaTime) {
+    // Limit deltaTime to prevent instability
+    deltaTime = std::min(deltaTime, 0.05f);
+    
+    // Store center of mass for stability
+    updateCenterOfMass(bodies);
+    
     // Compute gravitational forces
     computeForces(bodies);
     
@@ -17,9 +26,63 @@ void PhysicsEngine::update(std::vector<std::unique_ptr<Body>>& bodies, float del
         eulerIntegration(bodies, deltaTime);
     }
     
+    // Apply stability constraints
+    applyStabilityConstraints(bodies);
+    
     // Handle collisions
     if (collisionsEnabled) {
         detectAndResolveCollisions(bodies);
+    }
+}
+
+void PhysicsEngine::updateCenterOfMass(const std::vector<std::unique_ptr<Body>>& bodies) {
+    centerOfMass = glm::vec3(0.0f);
+    float totalMass = 0.0f;
+    
+    for (const auto& body : bodies) {
+        centerOfMass += body->position * body->mass;
+        totalMass += body->mass;
+    }
+    
+    if (totalMass > 0.0f) {
+        centerOfMass /= totalMass;
+    }
+}
+
+void PhysicsEngine::applyStabilityConstraints(std::vector<std::unique_ptr<Body>>& bodies) {
+    for (auto& body : bodies) {
+        if (body->isFixed) continue;
+        
+        // Velocity limiting to prevent bodies from flying away
+        float velocityMag = glm::length(body->velocity);
+        if (velocityMag > maxVelocity) {
+            body->velocity = glm::normalize(body->velocity) * maxVelocity;
+        }
+        
+        // Optional: Apply slight damping for stability
+        if (dampingEnabled) {
+            body->velocity *= dampingFactor;
+        }
+        
+        // Optional: Apply weak centering force to prevent drift
+        if (centeringForceEnabled) {
+            glm::vec3 toCenterOfMass = centerOfMass - body->position;
+            float distanceFromCenter = glm::length(toCenterOfMass);
+            
+            if (distanceFromCenter > 200.0f) {
+                // Apply very weak centering force
+                glm::vec3 centeringForce = glm::normalize(toCenterOfMass) * 0.1f * body->mass;
+                body->applyForce(centeringForce);
+            }
+        }
+        
+        // Prevent bodies from going too far from origin
+        float distanceFromOrigin = glm::length(body->position);
+        if (distanceFromOrigin > 500.0f) {
+            // Gently push back towards center
+            glm::vec3 directionToCenter = -glm::normalize(body->position);
+            body->velocity += directionToCenter * 0.5f;
+        }
     }
 }
 
@@ -48,7 +111,7 @@ glm::vec3 PhysicsEngine::calculateGravitationalForce(const Body& b1, const Body&
         distance = SOFTENING;
     }
     
-    // F = G * m1 * m2 / r^2
+    // Newton's law: F = G * m1 * m2 / r^2
     float forceMagnitude = (G * gravityScale * b1.mass * b2.mass) / (distance * distance);
     
     // Direction: unit vector from b1 to b2
@@ -64,36 +127,45 @@ void PhysicsEngine::eulerIntegration(std::vector<std::unique_ptr<Body>>& bodies,
 }
 
 void PhysicsEngine::rk4Integration(std::vector<std::unique_ptr<Body>>& bodies, float dt) {
+    // Store initial states
+    std::vector<State> initialStates;
+    for (const auto& body : bodies) {
+        State state;
+        state.position = body->position;
+        state.velocity = body->velocity;
+        state.force = body->force;
+        initialStates.push_back(state);
+    }
+    
     // RK4 integration for better accuracy
-    for (auto& body : bodies) {
+    for (size_t i = 0; i < bodies.size(); ++i) {
+        auto& body = bodies[i];
         if (body->isFixed) continue;
         
-        // Store initial state
-        glm::vec3 initialPos = body->position;
-        glm::vec3 initialVel = body->velocity;
+        State s0 = initialStates[i];
         
         // k1
         Derivative k1;
-        k1.velocity = body->velocity;
-        k1.acceleration = body->force / body->mass;
+        k1.velocity = s0.velocity;
+        k1.acceleration = s0.force / body->mass;
         
         // k2
-        body->position = initialPos + k1.velocity * (dt * 0.5f);
-        body->velocity = initialVel + k1.acceleration * (dt * 0.5f);
+        body->position = s0.position + k1.velocity * (dt * 0.5f);
+        body->velocity = s0.velocity + k1.acceleration * (dt * 0.5f);
         Derivative k2;
         k2.velocity = body->velocity;
         k2.acceleration = body->force / body->mass;
         
         // k3
-        body->position = initialPos + k2.velocity * (dt * 0.5f);
-        body->velocity = initialVel + k2.acceleration * (dt * 0.5f);
+        body->position = s0.position + k2.velocity * (dt * 0.5f);
+        body->velocity = s0.velocity + k2.acceleration * (dt * 0.5f);
         Derivative k3;
         k3.velocity = body->velocity;
         k3.acceleration = body->force / body->mass;
         
         // k4
-        body->position = initialPos + k3.velocity * dt;
-        body->velocity = initialVel + k3.acceleration * dt;
+        body->position = s0.position + k3.velocity * dt;
+        body->velocity = s0.velocity + k3.acceleration * dt;
         Derivative k4;
         k4.velocity = body->velocity;
         k4.acceleration = body->force / body->mass;
@@ -103,8 +175,8 @@ void PhysicsEngine::rk4Integration(std::vector<std::unique_ptr<Body>>& bodies, f
         glm::vec3 dVel = (k1.acceleration + 2.0f*k2.acceleration + 2.0f*k3.acceleration + k4.acceleration) / 6.0f;
         
         // Update final state
-        body->position = initialPos + dPos * dt;
-        body->velocity = initialVel + dVel * dt;
+        body->position = s0.position + dPos * dt;
+        body->velocity = s0.velocity + dVel * dt;
         body->updateTrail();
     }
 }
@@ -134,7 +206,7 @@ void PhysicsEngine::resolveCollision(Body& b1, Body& b2) {
     if (velAlongNormal > 0) return;
     
     // Calculate restitution (1.0 = perfectly elastic)
-    float restitution = 0.9f;
+    float restitution = 0.95f;
     
     // Calculate impulse scalar
     float j = -(1.0f + restitution) * velAlongNormal;
@@ -183,4 +255,8 @@ glm::vec3 PhysicsEngine::getTotalMomentum(const std::vector<std::unique_ptr<Body
         totalMomentum += body->getMomentum();
     }
     return totalMomentum;
+}
+
+glm::vec3 PhysicsEngine::getCenterOfMass() const {
+    return centerOfMass;
 }

@@ -5,6 +5,8 @@
 #include <vector>
 #include <memory>
 #include <cmath>
+#include <sstream>
+#include <iomanip>
 
 #include "Body.h"
 #include "PhysicsEngine.h"
@@ -12,10 +14,12 @@
 #include "Renderer.h"
 #include "UI.h"
 
-const int M_PI = 3.14;
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // Global state
-Camera camera(glm::vec3(0.0f, 50.0f, 150.0f), glm::vec3(0.0f));
+Camera camera(glm::vec3(0.0f, 80.0f, 180.0f), glm::vec3(0.0f));
 Renderer renderer;
 PhysicsEngine physics(1.0e10f);
 std::vector<std::unique_ptr<Body>> bodies;
@@ -24,9 +28,12 @@ bool paused = false;
 float timeScale = 1.0f;
 bool leftMousePressed = false;
 bool rightMousePressed = false;
+bool middleMousePressed = false;
 double lastMouseX = 0.0, lastMouseY = 0.0;
 
-// Window dimensions
+std::string currentSimulationName = "Solar System";
+std::string currentSimulationDescription = "Planetary system with central star";
+
 const int WINDOW_WIDTH = 1920;
 const int WINDOW_HEIGHT = 1080;
 
@@ -43,26 +50,27 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+void displaySimulationInfo();
+void selectBodyUnderCursor(GLFWwindow* window, double xpos, double ypos);
+void displayWelcome();
 
 int main() {
-    // Initialize GLFW
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
     }
     
-    // Set OpenGL version
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_SAMPLES, 4); // 4x MSAA
     
     #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     #endif
     
-    // Create window
     GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, 
-                                         "Gravity Simulator - N-Body Physics", 
+                                         "Gravity Simulator - N-Body Physics with Einstein Spacetime Warp", 
                                          NULL, NULL);
     if (!window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
@@ -77,7 +85,6 @@ int main() {
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetScrollCallback(window, scrollCallback);
     
-    // Initialize GLEW
     glewExperimental = GL_TRUE;
     GLenum err = glewInit();
     if (err != GLEW_OK) {
@@ -86,63 +93,45 @@ int main() {
     }
     
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    std::cout << "GLEW Version: " << glewGetString(GLEW_VERSION) << std::endl;
+    std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
     
-    // OpenGL configuration
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_LINE_SMOOTH);
     glEnable(GL_BLEND);
+    glEnable(GL_MULTISAMPLE);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glClearColor(0.0f, 0.0f, 0.05f, 1.0f);
+    glLineWidth(1.5f);
     
-    // Initialize renderer
     if (!renderer.initialize()) {
         std::cerr << "Failed to initialize renderer" << std::endl;
         return -1;
     }
     
-    // Setup initial simulation
     setupSimulation(UI::SimulationMode::SOLAR_SYSTEM);
-    
-    // Create UI
     UI ui(window);
     
-    // Timing
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;
+    int frameCount = 0;
     
-    std::cout << "\n=== GRAVITY SIMULATOR ===" << std::endl;
-    std::cout << "Controls:" << std::endl;
-    std::cout << "  1-6: Switch simulation modes" << std::endl;
-    std::cout << "  SPACE: Pause/Resume" << std::endl;
-    std::cout << "  R: Reset simulation" << std::endl;
-    std::cout << "  T: Toggle trails" << std::endl;
-    std::cout << "  V: Toggle velocity vectors" << std::endl;
-    std::cout << "  F: Toggle force vectors" << std::endl;
-    std::cout << "  +/-: Adjust time scale" << std::endl;
-    std::cout << "  Mouse: Rotate/Pan camera" << std::endl;
-    std::cout << "  Scroll: Zoom" << std::endl;
-    std::cout << "========================\n" << std::endl;
+    displayWelcome();
+    displaySimulationInfo();
     
-    // Main loop
     while (!glfwWindowShouldClose(window)) {
-        // Calculate delta time
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+        frameCount++;
         
-        // Process input
         glfwPollEvents();
         
-        // Update physics
         if (!paused) {
             physics.update(bodies, deltaTime * timeScale);
         }
         
-        // Update camera
         camera.update(deltaTime);
         
-        // Render
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
         int width, height;
@@ -152,7 +141,11 @@ int main() {
         renderer.render(bodies, camera, aspectRatio);
         ui.render(bodies, deltaTime, timeScale, paused);
         
-        // Check if new simulation mode selected
+        // Print system info periodically
+        if (frameCount % 300 == 0) {
+            ui.printSystemInfo(bodies, physics);
+        }
+        
         if (ui.hasNewModeSelected()) {
             setupSimulation(ui.getSelectedMode());
             ui.resetModeSelection();
@@ -161,14 +154,62 @@ int main() {
         glfwSwapBuffers(window);
     }
     
-    // Cleanup
     renderer.cleanup();
     glfwTerminate();
     return 0;
 }
 
-// Continued in Part 2...
-// Continuation of main.cpp - Simulation setup functions
+void displayWelcome() {
+    std::cout << "\n\n";
+    std::cout << "╔══════════════════════════════════════════════════════════════════╗\n";
+    std::cout << "║                                                                  ║\n";
+    std::cout << "║        GRAVITY SIMULATOR - N-BODY PHYSICS ENGINE                 ║\n";
+    std::cout << "║              with Einstein Spacetime Curvature                   ║\n";
+    std::cout << "║                                                                  ║\n";
+    std::cout << "║  Kathmandu University - Department of Computer Engineering       ║\n";
+    std::cout << "║  Developers: Sanjib Dahal & Aryaman Giri                        ║\n";
+    std::cout << "║                                                                  ║\n";
+    std::cout << "╚══════════════════════════════════════════════════════════════════╝\n\n";
+    
+    std::cout << "🎮 KEYBOARD CONTROLS:\n";
+    std::cout << "┌──────────────────────────────────────────────────────────────┐\n";
+    std::cout << "│ SIMULATION MODES:                                            │\n";
+    std::cout << "│  1  →  Solar System          4  →  Figure-8 Orbit           │\n";
+    std::cout << "│  2  →  Three-Body Problem    5  →  Galaxy Collision         │\n";
+    std::cout << "│  3  →  Binary Star System    6  →  Sandbox Mode             │\n";
+    std::cout << "├──────────────────────────────────────────────────────────────┤\n";
+    std::cout << "│ SIMULATION CONTROL:                                          │\n";
+    std::cout << "│  SPACE  →  Pause/Resume      R  →  Reset Simulation         │\n";
+    std::cout << "│  +/-    →  Time Scale        C  →  Clear Trails             │\n";
+    std::cout << "├──────────────────────────────────────────────────────────────┤\n";
+    std::cout << "│ VISUALIZATION:                                               │\n";
+    std::cout << "│  T  →  Toggle Trails         W  →  Toggle Spacetime Warp    │\n";
+    std::cout << "│  V  →  Toggle Velocity       A  →  Toggle Axes              │\n";
+    std::cout << "│  F  →  Toggle Forces         I  →  Toggle Info Display      │\n";
+    std::cout << "│  [  →  Decrease Warp         ]  →  Increase Warp            │\n";
+    std::cout << "├──────────────────────────────────────────────────────────────┤\n";
+    std::cout << "│ SANDBOX MODE:                                                │\n";
+    std::cout << "│  N  →  Add Random Body       DELETE  →  Remove Selected     │\n";
+    std::cout << "│  LEFT CLICK  →  Select Body                                  │\n";
+    std::cout << "└──────────────────────────────────────────────────────────────┘\n\n";
+    
+    std::cout << "🖱️  MOUSE CONTROLS:\n";
+    std::cout << "  • Left Click + Drag    →  Rotate Camera\n";
+    std::cout << "  • Right Click + Drag   →  Pan Camera\n";
+    std::cout << "  • Scroll Wheel         →  Zoom In/Out\n";
+    std::cout << "  • Left Click on Body   →  Select/View Info\n\n";
+    
+    std::cout << "📊 FEATURES:\n";
+    std::cout << "  ✓ Real-time N-body gravitational simulation\n";
+    std::cout << "  ✓ Einstein spacetime curvature visualization\n";
+    std::cout << "  ✓ RK4 numerical integration for accuracy\n";
+    std::cout << "  ✓ Energy & momentum conservation display\n";
+    std::cout << "  ✓ Interactive body selection and information\n";
+    std::cout << "  ✓ Force and velocity vector visualization\n";
+    std::cout << "  ✓ Collision detection and response\n\n";
+    
+    std::cout << "═══════════════════════════════════════════════════════════════\n\n";
+}
 
 void setupSimulation(UI::SimulationMode mode) {
     bodies.clear();
@@ -176,49 +217,82 @@ void setupSimulation(UI::SimulationMode mode) {
     switch (mode) {
         case UI::SimulationMode::SOLAR_SYSTEM:
             setupSolarSystem();
-            std::cout << "Loaded: Solar System" << std::endl;
+            currentSimulationName = "Solar System";
+            currentSimulationDescription = "Inner planets orbiting the Sun";
+            std::cout << "\n🌟 SIMULATION: Solar System\n";
+            std::cout << "   Realistic planetary orbits with stable central star\n";
             break;
+            
         case UI::SimulationMode::THREE_BODY:
             setupThreeBodyProblem();
-            std::cout << "Loaded: Three-Body Problem" << std::endl;
+            currentSimulationName = "Three-Body Problem";
+            currentSimulationDescription = "Chaotic three-body gravitational dance";
+            std::cout << "\n⚛️  SIMULATION: Three-Body Problem\n";
+            std::cout << "   Chaotic system with unpredictable long-term behavior\n";
             break;
+            
         case UI::SimulationMode::BINARY_STAR:
             setupBinaryStarSystem();
-            std::cout << "Loaded: Binary Star System" << std::endl;
+            currentSimulationName = "Binary Star System";
+            currentSimulationDescription = "Two stars with orbiting planets";
+            std::cout << "\n✨ SIMULATION: Binary Star System\n";
+            std::cout << "   Twin stars with complex planetary dynamics\n";
             break;
+            
         case UI::SimulationMode::FIGURE_8:
             setupFigure8Orbit();
-            std::cout << "Loaded: Figure-8 Orbit" << std::endl;
+            currentSimulationName = "Figure-8 Orbit";
+            currentSimulationDescription = "Choreographic periodic solution";
+            std::cout << "\n∞  SIMULATION: Figure-8 Orbit\n";
+            std::cout << "   Stable periodic three-body choreography\n";
             break;
+            
         case UI::SimulationMode::GALAXY_COLLISION:
             setupGalaxyCollision();
-            std::cout << "Loaded: Galaxy Collision" << std::endl;
+            currentSimulationName = "Galaxy Collision";
+            currentSimulationDescription = "Two galaxies merging";
+            std::cout << "\n🌌 SIMULATION: Galaxy Collision\n";
+            std::cout << "   Galactic merger with tidal interactions\n";
             break;
+            
         case UI::SimulationMode::SANDBOX:
             setupSandboxMode();
-            std::cout << "Loaded: Sandbox Mode" << std::endl;
+            currentSimulationName = "Sandbox Mode";
+            currentSimulationDescription = "Interactive creation mode";
+            std::cout << "\n🎨 SIMULATION: Sandbox Mode\n";
+            std::cout << "   Press 'N' to add bodies, Click to select\n";
             break;
     }
+    
+    displaySimulationInfo();
+}
+
+void displaySimulationInfo() {
+    std::cout << "─────────────────────────────────────────────────────────\n";
+    std::cout << "📊 Active: " << currentSimulationName << "\n";
+    std::cout << "   " << currentSimulationDescription << "\n";
+    std::cout << "   Bodies: " << bodies.size() 
+              << " | Time Scale: " << std::fixed << std::setprecision(1) 
+              << timeScale << "x"
+              << " | " << (paused ? "[PAUSED]" : "[RUNNING]") << "\n";
+    std::cout << "─────────────────────────────────────────────────────────\n\n";
 }
 
 void setupSolarSystem() {
-    // Sun (massive, fixed at center)
+    // Sun
     bodies.push_back(std::make_unique<Body>(
-        glm::vec3(0.0f, 0.0f, 0.0f),           // position
-        glm::vec3(0.0f, 0.0f, 0.0f),           // velocity
-        5000.0f,                                // mass
-        5.0f,                                   // radius
-        glm::vec3(1.0f, 0.9f, 0.2f),           // color (yellow)
-        "Sun",
-        true                                    // fixed
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        5000.0f, 5.0f,
+        glm::vec3(1.0f, 0.9f, 0.2f),
+        "Sun", true
     ));
     
     // Mercury
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(30.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 18.0f),
-        10.0f,
-        1.0f,
+        10.0f, 1.0f,
         glm::vec3(0.7f, 0.7f, 0.7f),
         "Mercury"
     ));
@@ -227,8 +301,7 @@ void setupSolarSystem() {
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(45.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 15.0f),
-        20.0f,
-        1.5f,
+        20.0f, 1.5f,
         glm::vec3(0.9f, 0.7f, 0.4f),
         "Venus"
     ));
@@ -237,8 +310,7 @@ void setupSolarSystem() {
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(60.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 13.0f),
-        25.0f,
-        1.8f,
+        25.0f, 1.8f,
         glm::vec3(0.2f, 0.4f, 0.8f),
         "Earth"
     ));
@@ -247,8 +319,7 @@ void setupSolarSystem() {
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(80.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 11.0f),
-        15.0f,
-        1.2f,
+        15.0f, 1.2f,
         glm::vec3(0.8f, 0.3f, 0.2f),
         "Mars"
     ));
@@ -257,22 +328,17 @@ void setupSolarSystem() {
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(120.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 8.5f),
-        100.0f,
-        3.5f,
+        100.0f, 3.5f,
         glm::vec3(0.8f, 0.7f, 0.6f),
         "Jupiter"
     ));
 }
 
 void setupThreeBodyProblem() {
-    // Classic three-body problem - chaotic system
-    // Using slightly asymmetric initial conditions for interesting dynamics
-    
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(-30.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 8.0f),
-        100.0f,
-        3.0f,
+        100.0f, 3.0f,
         glm::vec3(1.0f, 0.2f, 0.2f),
         "Body 1"
     ));
@@ -280,8 +346,7 @@ void setupThreeBodyProblem() {
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(30.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, -8.0f),
-        100.0f,
-        3.0f,
+        100.0f, 3.0f,
         glm::vec3(0.2f, 1.0f, 0.2f),
         "Body 2"
     ));
@@ -289,79 +354,62 @@ void setupThreeBodyProblem() {
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(0.0f, 0.0f, 40.0f),
         glm::vec3(-6.0f, 0.0f, 0.0f),
-        100.0f,
-        3.0f,
+        100.0f, 3.0f,
         glm::vec3(0.2f, 0.2f, 1.0f),
         "Body 3"
     ));
 }
 
 void setupBinaryStarSystem() {
-    // Two stars orbiting each other with planets
-    
-    // Star 1 (Blue)
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(-40.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 6.0f),
-        2000.0f,
-        4.0f,
+        2000.0f, 4.0f,
         glm::vec3(0.3f, 0.5f, 1.0f),
         "Star A"
     ));
     
-    // Star 2 (Red)
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(40.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, -6.0f),
-        2000.0f,
-        4.0f,
+        2000.0f, 4.0f,
         glm::vec3(1.0f, 0.3f, 0.3f),
         "Star B"
     ));
     
-    // Planet orbiting Star 1
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(-60.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 12.0f),
-        20.0f,
-        1.5f,
+        20.0f, 1.5f,
         glm::vec3(0.5f, 0.8f, 0.5f),
         "Planet A1"
     ));
     
-    // Planet orbiting Star 2
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(60.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, -12.0f),
-        20.0f,
-        1.5f,
+        20.0f, 1.5f,
         glm::vec3(0.8f, 0.5f, 0.8f),
         "Planet B1"
     ));
     
-    // Circumbinary planet (orbits both stars)
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(0.0f, 0.0f, 100.0f),
         glm::vec3(7.0f, 0.0f, 0.0f),
-        15.0f,
-        1.2f,
+        15.0f, 1.2f,
         glm::vec3(0.7f, 0.7f, 0.3f),
         "Circumbinary"
     ));
 }
 
 void setupFigure8Orbit() {
-    // Famous figure-8 stable three-body orbit
-    // These initial conditions produce a stable figure-8 pattern
-    
     float m = 100.0f;
     float v = 5.5f;
     
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(-25.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, v),
-        m,
-        3.0f,
+        m, 3.0f,
         glm::vec3(1.0f, 0.3f, 0.3f),
         "Body 1"
     ));
@@ -369,8 +417,7 @@ void setupFigure8Orbit() {
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(25.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, v),
-        m,
-        3.0f,
+        m, 3.0f,
         glm::vec3(0.3f, 1.0f, 0.3f),
         "Body 2"
     ));
@@ -378,28 +425,22 @@ void setupFigure8Orbit() {
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(0.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, -2.0f * v),
-        m,
-        3.0f,
+        m, 3.0f,
         glm::vec3(0.3f, 0.3f, 1.0f),
         "Body 3"
     ));
 }
 
 void setupGalaxyCollision() {
-    // Simulate two small galaxies colliding
-    // Each "galaxy" is a central massive body with several orbiting bodies
-    
-    // Galaxy 1 center
+    // Galaxy 1
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(-80.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 3.0f),
-        3000.0f,
-        5.0f,
+        3000.0f, 5.0f,
         glm::vec3(0.9f, 0.8f, 0.3f),
         "Galaxy 1 Core"
     ));
     
-    // Galaxy 1 stars
     for (int i = 0; i < 8; i++) {
         float angle = i * 2.0f * M_PI / 8.0f;
         float radius = 20.0f + (i % 3) * 10.0f;
@@ -408,24 +449,21 @@ void setupGalaxyCollision() {
         bodies.push_back(std::make_unique<Body>(
             glm::vec3(-80.0f + radius * cos(angle), 0.0f, radius * sin(angle)),
             glm::vec3(-speed * sin(angle), 0.0f, 3.0f + speed * cos(angle)),
-            15.0f,
-            1.0f,
+            15.0f, 1.0f,
             glm::vec3(0.8f, 0.8f, 0.9f),
             "G1-Star" + std::to_string(i)
         ));
     }
     
-    // Galaxy 2 center
+    // Galaxy 2
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(80.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, -3.0f),
-        3000.0f,
-        5.0f,
+        3000.0f, 5.0f,
         glm::vec3(0.3f, 0.6f, 0.9f),
         "Galaxy 2 Core"
     ));
     
-    // Galaxy 2 stars
     for (int i = 0; i < 8; i++) {
         float angle = i * 2.0f * M_PI / 8.0f;
         float radius = 20.0f + (i % 3) * 10.0f;
@@ -434,8 +472,7 @@ void setupGalaxyCollision() {
         bodies.push_back(std::make_unique<Body>(
             glm::vec3(80.0f + radius * cos(angle), 0.0f, radius * sin(angle)),
             glm::vec3(-speed * sin(angle), 0.0f, -3.0f + speed * cos(angle)),
-            15.0f,
-            1.0f,
+            15.0f, 1.0f,
             glm::vec3(0.9f, 0.9f, 1.0f),
             "G2-Star" + std::to_string(i)
         ));
@@ -443,21 +480,14 @@ void setupGalaxyCollision() {
 }
 
 void setupSandboxMode() {
-    // Empty scene - user can add bodies interactively
-    // Add just one central body to start
     bodies.push_back(std::make_unique<Body>(
         glm::vec3(0.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 0.0f),
-        1000.0f,
-        4.0f,
+        1000.0f, 4.0f,
         glm::vec3(1.0f, 1.0f, 0.5f),
-        "Central Body",
-        true
+        "Central Body", true
     ));
 }
-
-// Continued in Part 3...
-// Continuation of main.cpp - Input callback functions
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS) {
@@ -468,12 +498,11 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
                 
             case GLFW_KEY_SPACE:
                 paused = !paused;
-                std::cout << (paused ? "Paused" : "Resumed") << std::endl;
+                std::cout << (paused ? "⏸️  Paused" : "▶️  Resumed") << std::endl;
                 break;
                 
             case GLFW_KEY_R:
-                // Reset - reload current simulation
-                std::cout << "Resetting simulation..." << std::endl;
+                std::cout << "🔄 Resetting simulation..." << std::endl;
                 for (auto& body : bodies) {
                     body->clearTrail();
                 }
@@ -481,41 +510,42 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
                 
             case GLFW_KEY_T:
                 renderer.toggleTrails();
-                std::cout << "Trails: " << (renderer.isShowingTrails() ? "ON" : "OFF") << std::endl;
+                std::cout << "🛤️  Trails: " << (renderer.isShowingTrails() ? "ON" : "OFF") << std::endl;
                 break;
                 
             case GLFW_KEY_V:
                 renderer.toggleVelocityVectors();
-                std::cout << "Velocity vectors: " << (renderer.isShowingVelocity() ? "ON" : "OFF") << std::endl;
+                std::cout << "➡️  Velocity vectors: " << (renderer.isShowingVelocity() ? "ON" : "OFF") << std::endl;
                 break;
                 
             case GLFW_KEY_F:
                 renderer.toggleForceVectors();
-                std::cout << "Force vectors: " << (renderer.isShowingForces() ? "ON" : "OFF") << std::endl;
+                std::cout << "⚡ Force vectors: " << (renderer.isShowingForces() ? "ON" : "OFF") << std::endl;
                 break;
                 
             case GLFW_KEY_G:
                 renderer.toggleGrid();
+                std::cout << "📐 Grid toggled" << std::endl;
                 break;
                 
             case GLFW_KEY_A:
                 renderer.toggleAxes();
+                std::cout << "🎯 Axes toggled" << std::endl;
                 break;
                 
-            case GLFW_KEY_EQUAL:  // + key
+            case GLFW_KEY_EQUAL:
             case GLFW_KEY_KP_ADD:
                 timeScale *= 1.5f;
-                std::cout << "Time scale: " << timeScale << "x" << std::endl;
+                std::cout << "⏩ Time scale: " << timeScale << "x" << std::endl;
                 break;
                 
             case GLFW_KEY_MINUS:
             case GLFW_KEY_KP_SUBTRACT:
                 timeScale /= 1.5f;
                 if (timeScale < 0.1f) timeScale = 0.1f;
-                std::cout << "Time scale: " << timeScale << "x" << std::endl;
+                std::cout << "⏪ Time scale: " << timeScale << "x" << std::endl;
                 break;
                 
-            // Simulation mode selection
             case GLFW_KEY_1:
                 setupSimulation(UI::SimulationMode::SOLAR_SYSTEM);
                 break;
@@ -541,7 +571,6 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
                 break;
                 
             case GLFW_KEY_N:
-                // Add new random body in sandbox mode
                 {
                     float angle = (rand() % 360) * M_PI / 180.0f;
                     float radius = 40.0f + (rand() % 60);
@@ -557,16 +586,15 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
                                  (rand() % 100) / 100.0f),
                         "Body " + std::to_string(bodies.size())
                     ));
-                    std::cout << "Added new body. Total: " << bodies.size() << std::endl;
+                    std::cout << "➕ Added new body. Total: " << bodies.size() << std::endl;
                 }
                 break;
                 
             case GLFW_KEY_DELETE:
             case GLFW_KEY_BACKSPACE:
-                // Remove selected body
                 for (auto it = bodies.begin(); it != bodies.end(); ++it) {
                     if ((*it)->isSelected && !(*it)->isFixed) {
-                        std::cout << "Removed " << (*it)->name << std::endl;
+                        std::cout << "➖ Removed " << (*it)->name << std::endl;
                         bodies.erase(it);
                         break;
                     }
@@ -574,11 +602,10 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
                 break;
                 
             case GLFW_KEY_C:
-                // Clear all trails
                 for (auto& body : bodies) {
                     body->clearTrail();
                 }
-                std::cout << "Cleared all trails" << std::endl;
+                std::cout << "🧹 Cleared all trails" << std::endl;
                 break;
         }
     }
@@ -607,15 +634,13 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
     if (leftMousePressed) {
         float xoffset = xpos - lastMouseX;
-        float yoffset = lastMouseY - ypos;  // Reversed since y-coordinates go from bottom to top
-        
+        float yoffset = lastMouseY - ypos;
         camera.rotate(xoffset, yoffset);
     }
     
     if (rightMousePressed) {
         float xoffset = xpos - lastMouseX;
         float yoffset = lastMouseY - ypos;
-        
         camera.pan(-xoffset, yoffset);
     }
     
