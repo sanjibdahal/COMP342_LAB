@@ -2,9 +2,11 @@ praks
 graphics
 *.pdf
 glm-1.0.2
-PROJECT
 .venv/
 .python-version
 __pycache__/
 *.toml
 *.lock
+build/
+PROJECT/
+*.exe
